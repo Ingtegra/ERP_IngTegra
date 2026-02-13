@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IngTegra ERP | Sistema de Gestión</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Babel para React -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Fuentes e Iconos -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .glass { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(12px); }
+        /* Animaciones suaves */
+        .fade-in { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+    
+    <!-- Mapa de Importaciones (Permite usar 'import' como en un proyecto profesional) -->
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+        "lucide-react": "https://esm.sh/lucide-react@0.263.1",
+        "firebase/app": "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js",
+        "firebase/firestore": "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js",
+        "firebase/auth": "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js"
+      }
+    }
+    </script>
+</head>
+<body class="bg-slate-100 text-slate-900 h-screen overflow-hidden">
+    <div id="root"></div>
+
+    <!-- CÓDIGO DE LA APLICACIÓN -->
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect } from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { initializeApp } from 'firebase/app';
+        import { 
+          getFirestore, collection, addDoc, onSnapshot, 
+          doc, updateDoc, deleteDoc, query, where, getDoc 
+        } from 'firebase/firestore';
+        import { 
+          getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword 
+        } from 'firebase/auth';
+        import { 
+          LayoutDashboard, Box, Briefcase, Users, 
+          Wallet, Truck, LogOut, Plus, Minus, 
+          Calendar, AlertTriangle, UserCircle, FileText, Settings, Search
+        } from 'lucide-react';
+
+        // ========================================================
+        // 1. PEGA TUS CREDENCIALES DE FIREBASE AQUÍ
+        // ========================================================
+        const firebaseConfig = {
+        apiKey: "AIzaSyAT2P_ar6UEJKScY7SxZfcB8muH9SGdZhw",
+        authDomain: "ingtegra-168e6.firebaseapp.com",
+        projectId: "ingtegra-168e6",
+        storageBucket: "ingtegra-168e6.firebasestorage.app",
+        messagingSenderId: "751124377280",
+        appId: "1:751124377280:web:e7b0bd68641a2cceee4725",
+        measurementId: "G-SC8F9HG2V1"
+        };
+
+        // Inicialización segura
+        let db, auth;
+        if (firebaseConfig.apiKey) {
+          try {
+            const app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+          } catch (e) { console.error("Error iniciando Firebase", e); }
+        }
+
+        // --- COMPONENTE PRINCIPAL ---
+        const App = () => {
+          const [user, setUser] = useState(null);
+          const [userRole, setUserRole] = useState(null); // primera, segunda, tercera
+          const [view, setView] = useState('login');
+          const [loading, setLoading] = useState(true);
+
+          // Estados de datos
+          const [inventario, setInventario] = useState([]);
+          const [proyectos, setProyectos] = useState([]);
+          const [personal, setPersonal] = useState([]);
+          const [clientes, setClientes] = useState([]);
+          const [proveedores, setProveedores] = useState([]);
+          const [finanzas, setFinanzas] = useState([]);
+
+          useEffect(() => {
+            if (!auth) { setLoading(false); return; }
+            const unsub = onAuthStateChanged(auth, async (u) => {
+              if (u) {
+                // TRUCO: Si el email es admin@ingtegra.com, es dueño automáticamente
+                if(u.email === 'admin@ingtegra.com') {
+                    setUserRole('primera');
+                } else {
+                    // Buscar rol en base de datos
+                    const docRef = doc(db, 'usuarios', u.uid);
+                    try {
+                        const docSnap = await getDoc(docRef);
+                        if (docSnap.exists()) setUserRole(docSnap.data().rol);
+                        else setUserRole('tercera');
+                    } catch (e) { setUserRole('tercera'); }
+                }
+                setUser(u);
+                setView('dashboard');
+                cargarDatos();
+              } else {
+                setUser(null);
+                setUserRole(null);
+                setView('login');
+              }
+              setLoading(false);
+            });
+            return () => unsub();
+          }, []);
+
+          const cargarDatos = () => {
+            if(!db) return;
+            // Escuchar colecciones en tiempo real
+            onSnapshot(collection(db, 'inventario'), (s) => setInventario(s.docs.map(d => ({id: d.id, ...d.data()}))));
+            onSnapshot(collection(db, 'proyectos'), (s) => setProyectos(s.docs.map(d => ({id: d.id, ...d.data()}))));
+            onSnapshot(collection(db, 'usuarios'), (s) => setPersonal(s.docs.map(d => ({id: d.id, ...d.data()}))));
+            onSnapshot(collection(db, 'clientes'), (s) => setClientes(s.docs.map(d => ({id: d.id, ...d.data()}))));
+            onSnapshot(collection(db, 'proveedores'), (s) => setProveedores(s.docs.map(d => ({id: d.id, ...d.data()}))));
+            onSnapshot(collection(db, 'finanzas'), (s) => setFinanzas(s.docs.map(d => ({id: d.id, ...d.data()}))));
+          };
+
+          if (!firebaseConfig.apiKey) return <ConfigError />;
+          if (loading) return <div className="h-screen flex items-center justify-center bg-slate-900 text-white font-bold animate-pulse">Cargando IngTegra System...</div>;
+
+          return (
+            <div className="flex h-screen bg-slate-100 font-sans text-slate-900">
+              {view === 'login' ? (
+                <LoginScreen onLogin={() => setView('dashboard')} />
+              ) : (
+                <>
+                  <Sidebar role={userRole} view={view} setView={setView} onLogout={() => auth.signOut()} userEmail={user?.email} />
+                  <main className="flex-1 overflow-y-auto p-8 bg-[#F8FAFC]">
+                    {view === 'dashboard' && <Dashboard role={userRole} proyectos={proyectos} finanzas={finanzas} />}
+                    {view === 'inventario' && <Inventario role={userRole} data={inventario} db={db} />}
+                    {view === 'proyectos' && <Proyectos role={userRole} data={proyectos} clientes={clientes} personal={personal} inventario={inventario} db={db} />}
+                    {view === 'personal' && <Personal role={userRole} data={personal} db={db} auth={auth} />}
+                    {view === 'clientes' && <Clientes data={clientes} db={db} />}
+                    {view === 'proveedores' && <Proveedores data={proveedores} db={db} />}
+                    {view === 'finanzas' && <Finanzas role={userRole} data={finanzas} db={db} />}
+                  </main>
+                </>
+              )}
+            </div>
+          );
+        };
+
+        // --- MÓDULOS DEL SISTEMA ---
+
+        const Dashboard = ({ role, proyectos, finanzas }) => {
+          const saldo = finanzas.reduce((acc, curr) => curr.tipo === 'ingreso' ? acc + parseFloat(curr.monto) : acc - parseFloat(curr.monto), 0);
+          
+          return (
+            <div className="space-y-8 fade-in">
+              <div className="flex justify-between items-center">
+                  <h1 className="text-3xl font-black text-slate-800 tracking-tight">Panel de Control</h1>
+                  <span className="px-4 py-1.5 bg-white border border-slate-200 rounded-full text-xs font-bold uppercase text-slate-500 shadow-sm">
+                    {role === 'primera' ? 'Acceso Total' : role === 'segunda' ? 'Supervisor' : 'Operario'}
+                  </span>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <Card title="Proyectos Activos" value={proyectos.filter(p => p.estado !== 'finalizado').length} icon={<Briefcase/>} color="bg-blue-600" />
+                {role === 'primera' && (
+                   <Card title="Caja Actual" value={`$${saldo.toLocaleString()}`} icon={<Wallet/>} color={saldo >= 0 ? "bg-emerald-600" : "bg-rose-600"} />
+                )}
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-center">
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Estado del Sistema</h3>
+                    <div className="flex items-center gap-2 text-emerald-600 font-bold">
+                        <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse"></span>
+                        En Línea
+                    </div>
+                </div>
+              </div>
+            </div>
+          );
+        };
+
+        const Inventario = ({ role, data, db }) => {
+          const [tab, setTab] = useState('3d'); 
+          const [showModal, setShowModal] = useState(false);
+          const [form, setForm] = useState({ nombre: '', cantidad: 0, descripcion: '', categoria: '3d' });
+
+          const guardarItem = async (e) => {
+            e.preventDefault();
+            await addDoc(collection(db, 'inventario'), { ...form, cantidad: parseFloat(form.cantidad) });
+            setShowModal(false);
+            setForm({ nombre: '', cantidad: 0, descripcion: '', categoria: '3d' });
+          };
+
+          const categorias = {
+            '3d': 'Impresión 3D',
+            'metal': 'Metal Mecánica',
+            'ing': 'Ingeniería',
+            'consumibles': 'Consumibles'
+          };
+
+          const filtered = data.filter(i => i.categoria === tab);
+
+          return (
+            <div className="space-y-6 fade-in">
+              <div className="flex justify-between items-center">
+                <h2 className="text-2xl font-bold text-slate-800">Almacén e Inventario</h2>
+                {(role === 'primera' || role === 'segunda') && (
+                    <button onClick={() => setShowModal(true)} className="btn-primary"><Plus size={18}/> Nuevo Item</button>
+                )}
+              </div>
+
+              <div className="flex gap-2 overflow-x-auto pb-2 border-b border-slate-200">
+                {Object.entries(categorias).map(([key, label]) => (
+                  <button key={key} onClick={() => setTab(key)} 
+                    className={`px-5 py-2.5 rounded-t-xl font-bold text-sm transition ${tab === key ? 'bg-white text-blue-600 border-b-2 border-blue-600' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filtered.map(item => (
+                  <div key={item.id} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex justify-between items-start hover:shadow-md transition">
+                    <div>
+                      <h3 className="font-bold text-lg text-slate-800">{item.nombre}</h3>
+                      <p className="text-sm text-slate-500 mt-1">{item.descripcion}</p>
+                    </div>
+                    <div className="text-right">
+                      <span className={`text-2xl font-black ${item.cantidad < 5 ? 'text-rose-500' : 'text-blue-600'}`}>{item.cantidad}</span>
+                      <p className="text-[10px] uppercase font-bold text-slate-400">Stock</p>
+                    </div>
+                  </div>
+                ))}
+                {filtered.length === 0 && <p className="col-span-full text-center text-slate-400 italic py-10">No hay items en esta categoría.</p>}
+              </div>
+
+              {showModal && (
+                <Modal title="Añadir a Inventario" onClose={() => setShowModal(false)}>
+                  <form onSubmit={guardarItem} className="space-y-4">
+                    <Input label="Nombre del Producto" value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})} />
+                    <div className="grid grid-cols-2 gap-4">
+                        <Input label="Cantidad" type="number" value={form.cantidad} onChange={e => setForm({...form, cantidad: e.target.value})} />
+                        <div>
+                            <label className="label">Categoría</label>
+                            <select value={form.categoria} onChange={e => setForm({...form, categoria: e.target.value})} className="input">
+                                {Object.entries(categorias).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                            </select>
+                        </div>
+                    </div>
+                    <Input label="Descripción" value={form.descripcion} onChange={e => setForm({...form, descripcion: e.target.value})} />
+                    <button type="submit" className="btn-primary w-full">Guardar Item</button>
+                  </form>
+                </Modal>
+              )}
+            </div>
+          );
+        };
+
+        const Proyectos = ({ role, data, clientes, personal, inventario, db }) => {
+          const [selectedProject, setSelectedProject] = useState(null);
+          const [showCreate, setShowCreate] = useState(false);
+          const [form, setForm] = useState({ 
+            nombre: '', tipo: '3d', clienteId: '', encargadoId: '', 
+            descripcion: '', presupuestoMat: 0, presupuestoMano: 0, 
+            presupuestoExtra: 0, anticipo: 0, fechaEntrega: '',
+            estado: 'en_curso', equipo: [], materiales: []
+          });
+
+          const crearProyecto = async (e) => {
+            e.preventDefault();
+            if (!form.clienteId || !form.encargadoId) return alert("Selecciona cliente y encargado");
+            
+            try {
+                await addDoc(collection(db, 'proyectos'), {
+                    ...form,
+                    presupuestoMat: parseFloat(form.presupuestoMat),
+                    presupuestoMano: parseFloat(form.presupuestoMano),
+                    presupuestoExtra: parseFloat(form.presupuestoExtra),
+                    anticipo: parseFloat(form.anticipo),
+                    equipo: [{ uid: form.encargadoId, horas: 0 }] 
+                });
+                
+                if (parseFloat(form.anticipo) > 0) {
+                    await addDoc(collection(db, 'finanzas'), {
+                        tipo: 'ingreso', monto: parseFloat(form.anticipo), 
+                        descripcion: `Anticipo Proyecto: ${form.nombre}`, 
+                        fecha: new Date().toISOString(), categoria: 'Proyectos'
+                    });
+                }
+                setShowCreate(false);
+                alert("Proyecto creado correctamente");
+            } catch(err) { alert("Error al crear proyecto: " + err.message); }
+          };
+
+          return (
+            <div className="fade-in">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-slate-800">Gestión de Proyectos</h2>
+                {(role === 'primera') && <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus size={18}/> Nuevo Proyecto</button>}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {data.map(p => (
+                    <div key={p.id} onClick={() => setSelectedProject(p)} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 cursor-pointer hover:shadow-lg hover:border-blue-300 transition group relative overflow-hidden">
+                        <div className={`absolute top-0 left-0 w-1.5 h-full ${p.tipo === '3d' ? 'bg-orange-500' : p.tipo === 'metal' ? 'bg-slate-600' : 'bg-blue-500'}`}></div>
+                        <div className="flex justify-between items-start mb-3 pl-3">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{p.tipo}</span>
+                            <span className="text-xs font-bold bg-slate-100 text-slate-600 px-2 py-1 rounded-md">{p.fechaEntrega}</span>
+                        </div>
+                        <h3 className="text-xl font-bold text-slate-800 pl-3 mb-1 group-hover:text-blue-600 transition">{p.nombre}</h3>
+                        <p className="text-sm text-slate-500 pl-3 mb-4 truncate">{p.descripcion}</p>
+                        <div className="flex items-center gap-2 pl-3 border-t border-slate-50 pt-3">
+                            <Users size={14} className="text-slate-400"/>
+                            <span className="text-xs font-bold text-slate-500">{p.equipo?.length || 1} Miembros</span>
+                        </div>
+                    </div>
+                ))}
+              </div>
+
+              {/* DETALLE DE PROYECTO (MODAL GRANDE) */}
+              {selectedProject && (
+                  <ProjectModal 
+                    project={selectedProject} 
+                    onClose={() => setSelectedProject(null)}
+                    db={db} role={role}
+                    clientes={clientes} personal={personal} inventario={inventario}
+                  />
+              )}
+
+              {showCreate && (
+                <Modal title="Crear Nuevo Proyecto" onClose={() => setShowCreate(false)}>
+                    <form onSubmit={crearProyecto} className="space-y-4">
+                        <Input label="Nombre del Proyecto" value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})} />
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="label">Tipo</label>
+                                <select className="input" value={form.tipo} onChange={e => setForm({...form, tipo: e.target.value})}>
+                                    <option value="3d">Impresión 3D</option>
+                                    <option value="metal">Metal Mecánica</option>
+                                    <option value="ing">Servicios Ingeniería</option>
+                                </select>
+                            </div>
+                            <Input type="date" label="Entrega Estimada" value={form.fechaEntrega} onChange={e => setForm({...form, fechaEntrega: e.target.value})} />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="label">Cliente</label>
+                                <select className="input" value={form.clienteId} onChange={e => setForm({...form, clienteId: e.target.value})}>
+                                    <option value="">Seleccionar...</option>
+                                    {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="label">Encargado</label>
+                                <select className="input" value={form.encargadoId} onChange={e => setForm({...form, encargadoId: e.target.value})}>
+                                    <option value="">Seleccionar...</option>
+                                    {personal.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+                                </select>
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                            <Input type="number" label="Mat ($)" value={form.presupuestoMat} onChange={e => setForm({...form, presupuestoMat: e.target.value})} />
+                            <Input type="number" label="MO ($)" value={form.presupuestoMano} onChange={e => setForm({...form, presupuestoMano: e.target.value})} />
+                            <Input type="number" label="Extra ($)" value={form.presupuestoExtra} onChange={e => setForm({...form, presupuestoExtra: e.target.value})} />
+                        </div>
+                        <Input type="number" label="Anticipo ($)" value={form.anticipo} onChange={e => setForm({...form, anticipo: e.target.value})} />
+                        <textarea className="input h-20" placeholder="Descripción..." value={form.descripcion} onChange={e => setForm({...form, descripcion: e.target.value})}></textarea>
+                        <button type="submit" className="btn-primary w-full">Crear Proyecto</button>
+                    </form>
+                </Modal>
+              )}
+            </div>
+          );
+        };
+
+        // --- SUBCOMPONENTE DE DETALLE DE PROYECTO ---
+        const ProjectModal = ({ project, onClose, db, role, clientes, personal, inventario }) => {
+            const [tab, setTab] = useState('info');
+            const [nuevoMat, setNuevoMat] = useState({ id: '', cantidad: 1 });
+            const [nuevoMiembro, setNuevoMiembro] = useState('');
+            const cliente = clientes.find(c => c.id === project.clienteId) || {};
+            const encargado = personal.find(p => p.id === project.encargadoId) || {};
+
+            const updateHoras = async (uid, delta) => {
+                if (role === 'tercera') return; 
+                const nuevoEquipo = project.equipo.map(m => {
+                    if (m.uid === uid) return { ...m, horas: Math.max(0, m.horas + delta) };
+                    return m;
+                });
+                await updateDoc(doc(db, 'proyectos', project.id), { equipo: nuevoEquipo });
+            };
+
+            const agregarMiembro = async () => {
+                if (!nuevoMiembro) return;
+                const nuevoEquipo = [...(project.equipo || []), { uid: nuevoMiembro, horas: 0 }];
+                await updateDoc(doc(db, 'proyectos', project.id), { equipo: nuevoEquipo });
+            };
+
+            const reservarMaterial = async () => {
+                if (!nuevoMat.id) return;
+                const item = inventario.find(i => i.id === nuevoMat.id);
+                if (item.cantidad < nuevoMat.cantidad) return alert("Stock insuficiente");
+                
+                await updateDoc(doc(db, 'inventario', item.id), { cantidad: item.cantidad - nuevoMat.cantidad });
+                const mats = [...(project.materiales || []), { nombre: item.nombre, cantidad: nuevoMat.cantidad }];
+                await updateDoc(doc(db, 'proyectos', project.id), { materiales: mats });
+            };
+
+            return (
+                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex justify-end">
+                    <div className="w-full max-w-2xl bg-white h-full shadow-2xl overflow-y-auto p-8 animate-slide-in">
+                        <button onClick={onClose} className="mb-6 text-slate-400 hover:text-slate-600 font-bold flex items-center gap-2"><LogOut size={16} className="rotate-180"/> Volver</button>
+                        
+                        <div className="flex justify-between items-start mb-8">
+                            <h2 className="text-3xl font-black text-slate-800">{project.nombre}</h2>
+                            <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-bold uppercase">{project.tipo}</span>
+                        </div>
+
+                        <div className="flex gap-6 border-b border-slate-200 mb-6">
+                            {['info', 'materiales', 'equipo'].map(t => (
+                                <button key={t} onClick={() => setTab(t)} className={`pb-3 font-bold text-sm capitalize ${tab === t ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-400 hover:text-slate-600'}`}>
+                                    {t === 'info' ? 'Información' : t}
+                                </button>
+                            ))}
+                        </div>
+
+                        {tab === 'info' && (
+                            <div className="space-y-6">
+                                <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100">
+                                    <p className="text-xs font-bold text-slate-400 uppercase mb-1">Cliente</p>
+                                    <p className="font-bold text-lg">{cliente.nombre || 'N/A'}</p>
+                                    <p className="text-sm text-slate-500">{cliente.celular} • {cliente.nit}</p>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="p-4 border rounded-xl"><p className="label">Entrega</p><p className="font-bold">{project.fechaEntrega}</p></div>
+                                    <div className="p-4 border rounded-xl"><p className="label">Encargado</p><p className="font-bold">{encargado.nombre}</p></div>
+                                    <div className="p-4 border rounded-xl"><p className="label">Presupuesto Total</p><p className="font-bold">${project.presupuestoMat + project.presupuestoMano + project.presupuestoExtra}</p></div>
+                                    <div className="p-4 border rounded-xl bg-green-50 border-green-100"><p className="label text-green-600">Anticipo</p><p className="font-bold text-green-700">${project.anticipo}</p></div>
+                                </div>
+                                <div><p className="label">Descripción</p><p className="text-slate-600 mt-1">{project.descripcion}</p></div>
+                            </div>
+                        )}
+
+                        {tab === 'materiales' && (
+                            <div className="space-y-6">
+                                {(role !== 'tercera') && (
+                                    <div className="flex gap-2 items-end bg-slate-50 p-4 rounded-xl">
+                                        <div className="flex-1"><label className="label">Item</label><select className="input" onChange={e => setNuevoMat({...nuevoMat, id: e.target.value})}><option value="">Seleccionar...</option>{inventario.map(i => <option key={i.id} value={i.id}>{i.nombre}</option>)}</select></div>
+                                        <div className="w-20"><Input type="number" label="Cant." onChange={e => setNuevoMat({...nuevoMat, cantidad: e.target.value})} /></div>
+                                        <button onClick={reservarMaterial} className="btn-primary h-[46px]"><Plus/></button>
+                                    </div>
+                                )}
+                                <div className="space-y-2">
+                                    {(project.materiales || []).map((m, i) => (
+                                        <div key={i} className="flex justify-between p-3 border rounded-lg"><span>{m.nombre}</span><span className="font-bold">{m.cantidad}</span></div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {tab === 'equipo' && (
+                            <div className="space-y-6">
+                                {(role !== 'tercera') && (
+                                    <div className="flex gap-2"><select className="input" onChange={e => setNuevoMiembro(e.target.value)}><option value="">Añadir personal...</option>{personal.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}</select><button onClick={agregarMiembro} className="btn-primary">Añadir</button></div>
+                                )}
+                                <div className="space-y-3">
+                                    {(project.equipo || []).map((m, idx) => {
+                                        const p = personal.find(pe => pe.id === m.uid) || { nombre: 'Desc.' };
+                                        return (
+                                            <div key={idx} className="flex justify-between items-center p-4 border rounded-xl">
+                                                <div><p className="font-bold">{p.nombre}</p><p className="text-xs text-slate-400">Horas: {m.horas}</p></div>
+                                                {(role !== 'tercera') && (
+                                                    <div className="flex items-center gap-2">
+                                                        <button onClick={() => updateHoras(m.uid, -1)} className="p-1 bg-slate-100 rounded"><Minus size={16}/></button>
+                                                        <button onClick={() => updateHoras(m.uid, 1)} className="p-1 bg-slate-100 rounded"><Plus size={16}/></button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        // --- RESTO DE MÓDULOS ---
+        const Personal = ({ role, data, db, auth }) => {
+            const [form, setForm] = useState({ nombre: '', email: '', password: '', celular: '', rol: 'tercera' });
+            
+            const registrarUsuario = async (e) => {
+                e.preventDefault();
+                try {
+                    const userCred = await createUserWithEmailAndPassword(auth, form.email, form.password);
+                    await doc(db, 'usuarios', userCred.user.uid); 
+                    await addDoc(collection(db, 'usuarios'), { uid: userCred.user.uid, ...form });
+                    alert("Usuario creado. (Nota: La sesión cambiará al nuevo usuario)");
+                } catch (e) { alert(e.message); }
+            };
+
+            if (role !== 'primera') return <AccessDenied />;
+
+            return (
+                <div className="grid lg:grid-cols-3 gap-8 fade-in">
+                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                        <h3 className="font-bold text-lg mb-4">Nuevo Usuario</h3>
+                        <form onSubmit={registrarUsuario} className="space-y-4">
+                            <Input label="Nombre" onChange={e => setForm({...form, nombre: e.target.value})} />
+                            <Input label="Email" type="email" onChange={e => setForm({...form, email: e.target.value})} />
+                            <Input label="Password" type="password" onChange={e => setForm({...form, password: e.target.value})} />
+                            <Input label="Celular" onChange={e => setForm({...form, celular: e.target.value})} />
+                            <div><label className="label">Rango</label><select className="input" onChange={e => setForm({...form, rol: e.target.value})}><option value="primera">Primera (Dueño)</option><option value="segunda">Segunda (Supervisor)</option><option value="tercera">Tercera (Operario)</option></select></div>
+                            <button className="btn-primary w-full">Registrar</button>
+                        </form>
+                    </div>
+                    <div className="lg:col-span-2 space-y-3">
+                        <h3 className="font-bold text-lg">Personal Registrado</h3>
+                        {data.map(p => (
+                            <div key={p.id} className="bg-white p-4 rounded-xl border border-slate-200 flex justify-between items-center">
+                                <div className="flex items-center gap-3"><div className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center font-bold text-slate-500">{p.nombre[0]}</div><div><p className="font-bold">{p.nombre}</p><p className="text-xs text-slate-400">{p.email}</p></div></div>
+                                <span className="px-3 py-1 bg-slate-100 rounded-full text-xs font-bold uppercase">{p.rol}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
+        const Finanzas = ({ role, data, db }) => {
+            const [form, setForm] = useState({ tipo: 'egreso', monto: 0, descripcion: '', fecha: '' });
+            const guardar = async (e) => { e.preventDefault(); await addDoc(collection(db, 'finanzas'), form); };
+            if (role !== 'primera') return <AccessDenied />;
+            return (
+                <div className="space-y-6 fade-in">
+                    <h2 className="text-2xl font-bold">Finanzas</h2>
+                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                        <form onSubmit={guardar} className="flex gap-4 items-end">
+                            <div className="flex-1"><Input label="Descripción" onChange={e => setForm({...form, descripcion: e.target.value})} /></div>
+                            <div className="w-32"><Input label="Monto" type="number" onChange={e => setForm({...form, monto: e.target.value})} /></div>
+                            <div className="w-32"><label className="label">Tipo</label><select className="input" onChange={e => setForm({...form, tipo: e.target.value})}><option value="egreso">Egreso</option><option value="ingreso">Ingreso</option></select></div>
+                            <div className="w-40"><Input label="Fecha" type="date" onChange={e => setForm({...form, fecha: e.target.value})} /></div>
+                            <button className="btn-primary h-[46px]">Guardar</button>
+                        </form>
+                    </div>
+                    <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+                        <table className="w-full text-sm text-left">
+                            <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-xs"><tr><th className="p-4">Fecha</th><th className="p-4">Desc.</th><th className="p-4 text-right">Monto</th></tr></thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {data.map(f => (
+                                    <tr key={f.id}><td className="p-4 text-slate-500">{f.fecha}</td><td className="p-4 font-bold">{f.descripcion}</td><td className={`p-4 text-right font-black ${f.tipo==='ingreso'?'text-green-600':'text-red-500'}`}>{f.tipo==='ingreso'?'+':'-'}${f.monto}</td></tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+        };
+
+        const Clientes = ({ data, db }) => <GenericCRUD title="Clientes" col="clientes" data={data} db={db} fields={['nombre', 'celular', 'email', 'nit']} />;
+        const Proveedores = ({ data, db }) => <GenericCRUD title="Proveedores" col="proveedores" data={data} db={db} fields={['nombre', 'celular', 'email', 'nit', 'descripcion']} />;
+
+        // --- COMPONENTES GENÉRICOS ---
+        const GenericCRUD = ({ title, col, data, db, fields }) => {
+            const [show, setShow] = useState(false);
+            const [form, setForm] = useState({});
+            const save = async (e) => { e.preventDefault(); await addDoc(collection(db, col), form); setShow(false); setForm({}); };
+            return (
+                <div className="space-y-6 fade-in">
+                    <div className="flex justify-between items-center"><h2 className="text-2xl font-bold">{title}</h2><button onClick={() => setShow(true)} className="btn-primary"><Plus size={18}/> Nuevo</button></div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {data.map(item => (
+                            <div key={item.id} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm"><h3 className="font-bold text-lg mb-2">{item.nombre}</h3>{fields.filter(f=>f!=='nombre').map(f=><p key={f} className="text-sm text-slate-500 capitalize"><span className="font-bold">{f}:</span> {item[f]}</p>)}</div>
+                        ))}
+                    </div>
+                    {show && <Modal title={`Nuevo ${title}`} onClose={() => setShow(false)}><form onSubmit={save} className="space-y-4">{fields.map(f => <Input key={f} label={f} onChange={e => setForm({...form, [f]: e.target.value})} />)}<button className="btn-primary w-full">Guardar</button></form></Modal>}
+                </div>
+            );
+        };
+
+        const LoginScreen = ({ onLogin }) => {
+            const [email, setEmail] = useState('');
+            const [pass, setPass] = useState('');
+            const auth = getAuth();
+            const handle = async (e) => { e.preventDefault(); try { await signInWithEmailAndPassword(auth, email, pass); onLogin(); } catch (e) { alert("Error de acceso"); } };
+            return (
+                <div className="w-full h-full flex items-center justify-center bg-slate-900">
+                    <div className="bg-white p-8 rounded-2xl shadow-2xl w-96 text-center">
+                        <h1 className="text-3xl font-black text-blue-600 mb-2">IngTegra</h1>
+                        <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-8">Acceso Corporativo</p>
+                        <form onSubmit={handle} className="space-y-4 text-left">
+                            <Input label="Email" type="email" onChange={e => setEmail(e.target.value)} />
+                            <Input label="Contraseña" type="password" onChange={e => setPass(e.target.value)} />
+                            <button className="btn-primary w-full mt-4">Entrar</button>
+                        </form>
+                    </div>
+                </div>
+            );
+        };
+
+        const Sidebar = ({ role, view, setView, onLogout, userEmail }) => {
+            const menu = [
+                { id: 'dashboard', label: 'Inicio', icon: <LayoutDashboard/>, access: ['primera', 'segunda', 'tercera'] },
+                { id: 'inventario', label: 'Inventario', icon: <Box/>, access: ['primera', 'segunda', 'tercera'] },
+                { id: 'proyectos', label: 'Proyectos', icon: <Briefcase/>, access: ['primera', 'segunda', 'tercera'] },
+                { id: 'personal', label: 'Personal', icon: <Users/>, access: ['primera'] },
+                { id: 'clientes', label: 'Clientes', icon: <UserCircle/>, access: ['primera', 'segunda'] },
+                { id: 'proveedores', label: 'Proveedores', icon: <Truck/>, access: ['primera', 'segunda'] },
+                { id: 'finanzas', label: 'Finanzas', icon: <Wallet/>, access: ['primera'] },
+            ];
+            return (
+                <aside className="w-64 bg-slate-900 text-white flex flex-col p-4 shadow-2xl z-20">
+                    <div className="p-4 mb-6 border-b border-slate-800">
+                        <h2 className="text-xl font-black text-blue-500">IngTegra</h2>
+                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">ERP System v1.0</p>
+                    </div>
+                    <nav className="flex-1 space-y-2">
+                        {menu.filter(i => i.access.includes(role)).map(i => (
+                            <button key={i.id} onClick={() => setView(i.id)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition ${view === i.id ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
+                                {React.cloneElement(i.icon, { size: 18 })} {i.label}
+                            </button>
+                        ))}
+                    </nav>
+                    <div className="p-4 bg-slate-800 rounded-xl mt-4">
+                        <p className="text-xs text-slate-400 truncate">{userEmail}</p>
+                        <button onClick={onLogout} className="text-xs text-red-400 font-bold mt-2 hover:underline flex items-center gap-1"><LogOut size={12}/> Cerrar Sesión</button>
+                    </div>
+                </aside>
+            );
+        };
+
+        const Card = ({ title, value, icon, color }) => (
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex items-center gap-4">
+                <div className={`p-4 rounded-xl text-white shadow-md ${color}`}>{icon}</div>
+                <div><p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{title}</p><p className="text-2xl font-black text-slate-800">{value}</p></div>
+            </div>
+        );
+
+        const Input = ({ label, type="text", value, onChange }) => (
+            <div><label className="label">{label}</label><input type={type} value={value} onChange={onChange} className="input" /></div>
+        );
+
+        const Modal = ({ title, children, onClose }) => (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-[fadeIn_0.2s_ease-out]">
+                    <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50"><h3 className="font-bold text-lg">{title}</h3><button onClick={onClose}><LogOut className="rotate-45 text-slate-400" size={20}/></button></div>
+                    <div className="p-6 max-h-[80vh] overflow-y-auto">{children}</div>
+                </div>
+            </div>
+        );
+
+        const AccessDenied = () => <div className="h-full flex flex-col items-center justify-center text-slate-400"><AlertTriangle size={48} className="mb-4 text-orange-500"/><h2 className="text-xl font-bold text-slate-800">Acceso Restringido</h2><p>Tu rango no permite ver esta sección.</p></div>;
+        const ConfigError = () => <div className="h-screen bg-slate-900 flex items-center justify-center p-4"><div className="bg-white p-8 rounded-2xl max-w-md text-center"><Settings size={48} className="mx-auto text-blue-600 mb-4 animate-spin"/><h1 className="text-2xl font-black text-slate-800">Falta Configuración</h1><p className="text-slate-500 mt-2 text-sm">Pega las credenciales de Firebase en el código (Línea 40).</p></div></div>;
+
+        // Styles
+        const style = document.createElement('style');
+        style.innerHTML = `.input { width: 100%; padding: 0.75rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 0.75rem; font-weight: 600; outline: none; transition: all 0.2s; } .input:focus { border-color: #3b82f6; ring: 2px solid #3b82f6; background: #fff; } .label { display: block; font-size: 0.75rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; margin-bottom: 0.25rem; margin-left: 0.25rem; } .btn-primary { background: #2563eb; color: white; padding: 0.75rem 1.5rem; border-radius: 0.75rem; font-weight: 800; transition: background 0.2s; display: flex; align-items: center; justify-content: center; gap: 0.5rem; } .btn-primary:hover { background: #1d4ed8; } .btn-secondary { background: #f1f5f9; color: #475569; padding: 0.5rem 1rem; border-radius: 0.5rem; font-weight: 700; border: 1px solid #e2e8f0; } .btn-secondary:hover { background: #e2e8f0; }`;
+        document.head.appendChild(style);
+
+        // Renderizado
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
+```
+```
